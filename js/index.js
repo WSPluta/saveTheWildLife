@@ -1,10 +1,24 @@
 let canvas;
 let player;
+let playerName;
 let timerId;
 // Declare objectIntervalId in the global scope
 let objectIntervalId;
 let gameOverFlag = false;
 
+var console = window.console;
+
+const startButton = document.getElementById("startButton");
+startButton.addEventListener("click", init);
+
+function init() {
+  const inputNameValue = document.getElementsByName("name")[0].value;
+  if (inputNameValue.length) {
+    localStorage.setItem("yourName", inputNameValue);
+  }
+const overlay = document.getElementById("overlay");
+overlay.remove();
+playerName = localStorage.getItem("yourName") || "Player";
 // Set up the timer
 var timer = 180; // 3 minutes in seconds
 
@@ -16,6 +30,7 @@ var scene = new THREE.Scene();
 var camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 renderer = new THREE.WebGLRenderer({
   canvas: canvas,
+  antialias: true,
 });
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
@@ -34,17 +49,109 @@ window.addEventListener('resize', function () {
   camera.updateProjectionMatrix();
 });
 
-const planeGeometry = new THREE.PlaneGeometry(89, 23);
+const planeGeometry = new THREE.PlaneGeometry(24, 9);
 const planeMaterial = new THREE.MeshPhongMaterial({ color: 0x00008B });
 const plane = new THREE.Mesh(planeGeometry, planeMaterial);
-plane.position.set(0, 0, -1);
+plane.position.set(0, 0, -0.3);
 scene.add(plane);
 
+const sandGeometry = new THREE.PlaneGeometry(25, 10);
+const sandMaterial = new THREE.MeshPhongMaterial({ color: 0xF4A460 });
+const sand = new THREE.Mesh(sandGeometry, sandMaterial);
+sand.position.set(0, 0, -0.2);
+scene.add(sand);
+
+const grassGeometry = new THREE.PlaneGeometry(89, 23);
+const grassMaterial = new THREE.MeshPhongMaterial({ color: 0x228B22 });
+const grass = new THREE.Mesh(grassGeometry, grassMaterial);
+grass.position.set(0, 0, -0.3);
+scene.add(grass);
+
 const waterGeometry = new THREE.PlaneGeometry(23, 8);
-const waterMaterial = new THREE.MeshPhongMaterial({ color: 0xFFFFF, transparent: true, opacity: 0.2});
+
+// Define the shader uniforms
+const uniforms = {
+  time: { value: 0 }, // Time uniform for animation
+};
+
+// Define the vertex shader
+const vertexShader = `
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+// Define the fragment shader
+const fragmentShader = `
+  uniform float time;
+  varying vec2 vUv;
+  void main() {
+    vec3 color1 = vec3(0.0, 0.0, 1.0); // Blue
+    vec3 color2 = vec3(0.0, 0.0, 0.5); // Dark blue
+    vec3 color = mix(color1, color2, vUv.y + sin(time * 3.0 + vUv.x * 10.0) * 0.1); // Gradient with animation
+    gl_FragColor = vec4(color, 0.2);
+  }
+`;
+
+const waterMaterial = new THREE.ShaderMaterial({
+  uniforms,
+  vertexShader,
+  fragmentShader,
+  transparent: true,
+});
+
 const water = new THREE.Mesh(waterGeometry, waterMaterial);
 water.position.set(0, 0, 0);
 scene.add(water);
+
+
+// Add a directional light to simulate the sun
+const sun = new THREE.DirectionalLight(0xFAFAD2, 8);
+sun.position.set(-10, 10, 10);
+sun.castShadow = true;
+scene.add(sun);
+const SUN_ANIMATION_DURATION = 180; // in seconds
+const SUN_X_DISTANCE = 20; // in world units
+let startTime = null;
+
+function animateSun(time) {
+  if (!startTime) {
+    startTime = time;
+  }
+  const elapsedTime = (time - startTime) / 1000; // convert to seconds
+  const progress = elapsedTime / SUN_ANIMATION_DURATION;
+  const x = -SUN_X_DISTANCE + progress * SUN_X_DISTANCE * 2;
+  sun.position.setX(x);
+  if (progress <= 1) {
+    requestAnimationFrame(animateSun);
+  }
+}
+
+requestAnimationFrame(animateSun);
+
+
+// Add ambient light to simulate scattered light
+const ambient = new THREE.AmbientLight(0xffffff, 1);
+scene.add(ambient);
+
+// Create the navmesh object
+const navmeshGeometry = new THREE.PlaneGeometry(23, 8);
+const navmeshMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff, wireframe: false });
+const navmesh = new THREE.Mesh(navmeshGeometry, navmeshMaterial);
+
+// Update the navmesh geometry and position when the water object changes
+water.addEventListener('change', () => {
+  // Update the geometry of the navmesh to match the water object
+  navmesh.geometry = water.geometry.clone();
+  
+  // Update the position of the navmesh to match the water object
+  navmesh.position.copy(water.position);
+});
+
+// Add the navmesh to the scene
+scene.add(navmesh);
 
 // Add directional light to the scene
 const directionalLight = new THREE.DirectionalLight(0xffffff, 0.90);
@@ -64,6 +171,15 @@ loader.load(
     boat.position.set(0, 0, 0);
     boat.scale.set(1, 1, 1);
     boat.rotation.set(0,0,0);
+
+    // Enable shadows for the boat
+    boat.traverse(function (child) {
+      if (child instanceof THREE.Mesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+        child.material.side = THREE.DoubleSide;
+      }
+    });
 
     // Add the boat to the scene
     scene.add(boat);
@@ -107,6 +223,7 @@ timerDiv.style.position = 'absolute';
 timerDiv.style.top = '45px';
 timerDiv.style.left = '10px';
 timerDiv.style.color = 'white';
+timerDiv.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
 timerDiv.innerHTML = 'Time: ' + timer;
 document.body.appendChild(timerDiv);
 console.log(timer);
@@ -149,6 +266,7 @@ function restart() {
   // Reset the player's position and score
   player.position.set(0, 0, 0);
   score = 0;
+  playerName=[];
 
   // Display the player's score on the screen
   scoreElement.innerHTML = 'Score: ' + score;
@@ -187,13 +305,13 @@ function gameOver() {
   }
   objects.length = 0;
 
-  // Display the player's score as a CSS overlay
+  // Display the player's score and name as a CSS overlay
   const scoreOverlay = document.createElement('div');
   scoreOverlay.id = 'score-overlay';
   scoreOverlay.innerHTML = 'Game Over';
+  scoreOverlay.innerHTML += '<br>Name: ' + playerName;
   scoreOverlay.innerHTML += '<br>Score: ' + score;
   document.body.appendChild(scoreOverlay);
-
 
   // Create a restart button
   const restartBtn = document.createElement('button');
@@ -207,9 +325,26 @@ function gameOver() {
   });
   document.body.appendChild(restartBtn);
 
+ // Save the player's name and score to a local JSON file
+ const playerData = { name: playerName, score: score };
+ const leaderboard = JSON.parse(localStorage.getItem('leaderboard') || '[]');
+ leaderboard.push(playerData);
+ localStorage.setItem('leaderboard', JSON.stringify(leaderboard));
+
+ function viewLeaderboard() {
+  const leaderboardData = localStorage.getItem('leaderboard');
+  if (leaderboardData) {
+    console.log(JSON.parse(leaderboardData));
+  } else {
+    console.log('No leaderboard data found');
+  }
+}viewLeaderboard();
+
   clearTimeout(timerId);
   stopObjectCreation();
 }
+
+
 
 // Create a function to start the timer
 function startTimer() {
@@ -235,6 +370,7 @@ scoreElement.style.top = '10px';
 scoreElement.style.left = '10px';
 scoreElement.style.color = 'white';
 scoreElement.style.fontSize = '24px';
+scoreElement.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
 scoreElement.innerHTML = 'Score: ' + score;
 document.body.appendChild(scoreElement);
 console.log(score);
@@ -247,14 +383,16 @@ const materials = [
 const geometries = [
   new THREE.SphereGeometry(),
   new THREE.BoxGeometry(),
+    new THREE.BufferGeometry()
 ];
 
 // Create a random trash or wildlife object
 function createRandomObject() {
-    // Check if the game is over
-    if (remainingTime <= 0 || gameOverFlag) {
-      return;
-    }
+  // Check if the game is over
+  if (remainingTime <= 0 || gameOverFlag) {
+    return;
+  }
+
   const isWildlife = Math.random() < 0.5; // 50% chance of being wildlife
   const geometry = isWildlife ? geometries[0] : geometries[1]; // Use sphere geometry for wildlife, cube geometry for trash
   const material = isWildlife ? materials[0] : materials[1];
@@ -267,6 +405,7 @@ function createRandomObject() {
   const scale = Math.random() * 1; // Random scale value between 1 and 15
   object.scale.set(scale, scale, scale);
   object.type = isWildlife ? 'wildlife' : 'trash';
+  object.outOfBounds = false;
 
   // check if object is within the bounds of the plane
   const waterBoundaries = waterGeometry.parameters;
@@ -277,8 +416,8 @@ function createRandomObject() {
     objectBoundaries.min.y > waterBoundaries.height / 2 ||
     objectBoundaries.max.y < -waterBoundaries.height / 2
   ) {
-    // if the object is outside the plane, remove it and return
-    scene.remove(object);
+    // if the object is outside the plane, mark it as out of bounds and return
+    object.outOfBounds = true;
     return;
   }
 
@@ -301,6 +440,11 @@ function checkCollisions() {
   // Loop through each object in the scene
   for (let i = 0; i < objects.length; i++) {
     const object = objects[i];
+
+    // Check if the object is out of bounds
+    if (object.outOfBounds) {
+      continue;
+    }
 
     // Create a bounding box for the object
     const objectBox = new THREE.Box3().setFromObject(object);
@@ -327,6 +471,7 @@ function checkCollisions() {
   }
 }
 
+
 function createObject() {
   createRandomObject();
   const timeInterval = Math.floor(Math.random() * 9000) + 1000; // Random time interval between 1 and 10 seconds
@@ -349,124 +494,67 @@ document.addEventListener("keyup", function (event) {
   keyboard[event.code] = false;
 });
 
-const playerSpeed = 0.1;
+let playerSpeed = 0
 
-// Update the position of the player based on keyboard input
+// Cache the navmesh bounding box for optimization
+const navmeshBoundingBox = new THREE.Box3().setFromObject(navmesh);
+
 function updatePlayerPosition() {
-
-  if (!player || !water || gameOverFlag) { // Update the condition to disable keyboard input if the game is over
+  if (!player || !water || gameOverFlag) {
     return;
   }
+
+  const ACCELERATION = 0.005;
+  const BRAKE = 0.1;
+  const MAX_SPEED = 0.05;
+  const TURN_SPEED = Math.PI / 180;
+
   // Update the player's position based on keyboard input
+  let movement = new THREE.Vector3(0, 0, 0);
   if (keyboard["ArrowUp"]) {
-    player.position.y = Math.min(player.position.y +playerSpeed+ 0.1, water.geometry.parameters.height / 2);
-    player.rotation.z = 0 ; // Set player rotation to north
+    playerSpeed += ACCELERATION;
+  } else if (keyboard["ArrowDown"]) {
+    playerSpeed -= BRAKE;
+  } else {
+    playerSpeed *= 0.98; // Decelerate if no acceleration or braking input
   }
-  if (keyboard["ArrowDown"]) {
-    player.position.y = Math.max(player.position.y - 0.1, -water.geometry.parameters.height / 2);
-    player.rotation.z = Math.PI* 1 ; // Set player rotation to south
-  }
+  playerSpeed = Math.max(Math.min(playerSpeed, MAX_SPEED), -MAX_SPEED); // Clamp the speed within the range of -MAX_SPEED to MAX_SPEED
+
   if (keyboard["ArrowLeft"]) {
-    player.position.x = Math.max(player.position.x - 0.1, -water.geometry.parameters.width / 2);
-    player.rotation.z = Math.PI / 2; // Set player rotation to west
+    player.rotation.z += TURN_SPEED;
   }
   if (keyboard["ArrowRight"]) {
-    player.position.x = Math.min(player.position.x + 0.1, water.geometry.parameters.width / 2);
-    player.rotation.z = -Math.PI / 2; // Set player rotation to east
+    player.rotation.z -= TURN_SPEED;
   }
-  if (keyboard["ArrowUp"] && keyboard["ArrowRight"]) {
-    player.position.y = Math.min(player.position.y + 0.1, water.geometry.parameters.height / 2);
-    player.position.x = Math.min(player.position.x + 0.1, water.geometry.parameters.width / 2);
-    player.rotation.z = -Math.PI / 4; // Set player rotation to northeast
-  }
-  if (keyboard["ArrowUp"] && keyboard["ArrowLeft"]) {
-    player.position.y = Math.min(player.position.y + 0.1, water.geometry.parameters.height / 2);
-    player.position.x = Math.max(player.position.x - 0.1, -water.geometry.parameters.width / 2);
-    player.rotation.z = Math.PI / 4; // Set player rotation to northwest
-  }
-  if (keyboard["ArrowDown"] && keyboard["ArrowRight"]) {
-    player.position.y = Math.max(player.position.y - 0.1, -water.geometry.parameters.height / 2);
-    player.position.x = Math.min(player.position.x + 0.1, water.geometry.parameters.width / 2);
-    player.rotation.z = -Math.PI * 0.75; // Set player rotation to southeast
-  }
-  if (keyboard["ArrowDown"] && keyboard["ArrowLeft"]) {
-    player.position.y = Math.max(player.position.y - 0.1, -water.geometry.parameters.height / 2);
-    player.position.x = Math.max(player.position.x - 0.1, -water.geometry.parameters.width / 2);
-    player.rotation.z = Math.PI * 0.75; // Set player rotation to southwest
-  }
-  
-  // Create a bounding box for the water
-  const waterBoundingBox = new THREE.Box3().setFromObject(water);
 
-  // Create a bounding box for the player
+  // Convert the player's rotation to a unit vector
+  const direction = new THREE.Vector3(0, 1, 0).applyQuaternion(player.quaternion);
+
+  // Calculate the player's movement vector based on the current speed and direction
+  movement.copy(direction).multiplyScalar(playerSpeed);
+
+  // Save the player's current position for backup
+  const lastPosition = player.position.clone();
+
+  // Update the player's position
+  player.position.add(movement);
+
+  // Check if the player's position intersects with the navmesh
   const playerBoundingBox = new THREE.Box3().setFromObject(player);
-  if (player !== undefined) {
-    playerBoundingBox.setFromObject(player);
-  }
-
-  // Check for intersection between the two bounding boxes
-  if (playerBoundingBox.intersectsBox(waterBoundingBox)) {
-    // Allow movement
-    player.position.z = 0;
-    // console.log("Player is on the plane.");
-  } else {
-    // Limit movement to the plane
-    player.position.z = Math.max(player.position.z, 0);
-    // console.log("Player is outside the plane.");
+  if (!playerBoundingBox.intersectsBox(navmeshBoundingBox)) {
+    // Move the player back to the last valid position
+    player.position.copy(lastPosition);
   }
 
   // Update the camera position to follow the player
   camera.position.x = player.position.x;
   camera.position.y = player.position.y;
   camera.position.z = player.position.z + 5;
+
   checkCollisions();
 }
 
-//ArrowCode TODO
-// // Create an arrow to navigate player to objects
-// const arrowGeometry = new THREE.ConeGeometry(0.5, 1, 8);
-// const arrowMaterial = new THREE.MeshPhongMaterial({ color: 0xff0000, transparent: true, opacity: 0.5 });
-// const arrow = new THREE.Mesh(arrowGeometry, arrowMaterial);
-// scene.add(arrow);
-
-// // Update the arrow position to point to the nearest object that is not within the camera range
-// function updateArrowPosition() {
-//   // Find the nearest trash object that is not within the camera range
-//   let nearestObject = null;
-//   let nearestDistance = Infinity;
-
-//   // Filter objects array to only include objects with type "trash"
-//   const trashObjects = objects.filter((object) => object.type === "trash");
-
-//   for (let i = 0; i < trashObjects.length; i++) {
-//     const object = trashObjects[i];
-
-//     // Check if the object is not within the camera range
-//     if (!isObjectWithinCameraRange(object)) {
-//       // Calculate the distance between the player and the object
-//       const distance = player.position.distanceTo(object.position);
-
-//       // Update the nearest object and distance if this object is closer
-//       if (distance < nearestDistance) {
-//         nearestObject = object;
-//         nearestDistance = distance;
-//       }
-//     }
-//   }
-
-//   // Update the arrow position and rotation to point to the nearest object
-//   if (nearestObject) {
-//     arrow.position.copy(player.position);
-//     arrow.position.z = 2;
-//     arrow.rotation.z = Math.atan2(
-//       nearestObject.position.y - player.position.y,
-//       nearestObject.position.x - player.position.x
-//     );
-//     arrow.visible = true;
-//   } else {
-//     arrow.visible = false;
-//   }
-// }
+console.log(playerName)
 
 
 // Check if an object is within the camera range
@@ -482,9 +570,12 @@ function animate() {
   renderer.render(scene, camera);
   checkCollisions();
   stopObjectCreation();
+  uniforms.time.value += 0.1;
+  renderer.render(scene, camera);
 }
 animate();
 
-var light = new THREE.PointLight(0xffffff, 0.1, 0.1);
+var light = new THREE.PointLight(0xffffff, 1, 1);
 light.position.set(0, 1, 0);
 player.add(light);
+}
