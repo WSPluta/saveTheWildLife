@@ -6,7 +6,7 @@ let objectIntervalId;
 let gameOverFlag = false;
 
 // Set up the timer
-var timer = 180; // 3 minutes in seconds
+var timer = 10; // 3 minutes in seconds
 
 // Create an array to store the objects in the scene
 const objects = [];
@@ -34,17 +34,67 @@ window.addEventListener('resize', function () {
   camera.updateProjectionMatrix();
 });
 
-const planeGeometry = new THREE.PlaneGeometry(89, 23);
-const planeMaterial = new THREE.MeshPhongMaterial({ color: 0x00008B });
-const plane = new THREE.Mesh(planeGeometry, planeMaterial);
-plane.position.set(0, 0, -1);
+// Create a texture for the water surface
+const waterTexture = new THREE.TextureLoader().load('https://threejs.org/examples/textures/waternormals.jpg');
+waterTexture.wrapS = waterTexture.wrapT = THREE.RepeatWrapping;
+
+// Create a shader material for the water surface
+const waterMaterial = new THREE.ShaderMaterial({
+  uniforms: {
+    time: { value: 0 },
+    normalMap: { value: waterTexture },
+    resolution: { value: new THREE.Vector2() }
+  },
+  vertexShader: `
+    uniform float time;
+    uniform vec2 resolution;
+
+    varying vec2 vUv;
+
+    void main() {
+      vUv = uv;
+      vec3 pos = position;
+
+      // Add some noise to the water surface
+      pos.z += 0.3 * sin(pos.x * 10.0 + time * 5.0);
+      pos.z += 0.2 * sin(pos.y * 20.0 + time * 10.0);
+      pos.z += 0.1 * sin((pos.x + pos.y) * 15.0 + time * 3.0);
+
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform float time;
+    uniform sampler2D normalMap;
+    uniform vec2 resolution;
+
+    varying vec2 vUv;
+
+    void main() {
+      vec2 uv = vUv * 10.0;
+      vec2 uv2 = uv + vec2(time * 0.01, time * 0.005);
+      vec4 noise = texture2D(normalMap, uv2);
+      vec4 color = vec4(0.1, 0.4, 0.8, 1.0);
+      color.rgb += noise.rgb * 0.2;
+      gl_FragColor = color;
+    }
+  `
+});
+
+// Create the plane mesh with the water material
+const planeGeometry = new THREE.PlaneGeometry(23, 8, 50, 50);
+const plane = new THREE.Mesh(planeGeometry, waterMaterial);
+plane.position.set(0, 0, 0);
+plane.rotation.y = 0;
+plane.rotation.z = 180;
+plane.rotation.x = -Math.PI / 2;
 scene.add(plane);
 
-const waterGeometry = new THREE.PlaneGeometry(23, 8);
-const waterMaterial = new THREE.MeshPhongMaterial({ color: 0xFFFFF, transparent: true, opacity: 0.2});
-const water = new THREE.Mesh(waterGeometry, waterMaterial);
-water.position.set(0, 0, 0);
-scene.add(water);
+// Update the water material on each frame
+function updateWaterMaterial(time) {
+  waterMaterial.uniforms.time.value = time * 0.001;
+  waterMaterial.uniforms.resolution.value.set(window.innerWidth, window.innerHeight);
+}
 
 // Add directional light to the scene
 const directionalLight = new THREE.DirectionalLight(0xffffff, 0.90);
@@ -194,7 +244,6 @@ function gameOver() {
   scoreOverlay.innerHTML += '<br>Score: ' + score;
   document.body.appendChild(scoreOverlay);
 
-
   // Create a restart button
   const restartBtn = document.createElement('button');
   restartBtn.innerHTML = 'Restart';
@@ -210,6 +259,9 @@ function gameOver() {
   clearTimeout(timerId);
   stopObjectCreation();
 }
+
+
+
 
 // Create a function to start the timer
 function startTimer() {
@@ -269,13 +321,13 @@ function createRandomObject() {
   object.type = isWildlife ? 'wildlife' : 'trash';
 
   // check if object is within the bounds of the plane
-  const waterBoundaries = waterGeometry.parameters;
+  const planeBoundaries = planeGeometry.parameters;
   const objectBoundaries = new THREE.Box3().setFromObject(object);
   if (
-    objectBoundaries.min.x > waterBoundaries.width / 2 ||
-    objectBoundaries.max.x < -waterBoundaries.width / 2 ||
-    objectBoundaries.min.y > waterBoundaries.height / 2 ||
-    objectBoundaries.max.y < -waterBoundaries.height / 2
+    objectBoundaries.min.x > planeBoundaries.width / 2 ||
+    objectBoundaries.max.x < -planeBoundaries.width / 2 ||
+    objectBoundaries.min.y > planeBoundaries.height / 2 ||
+    objectBoundaries.max.y < -planeBoundaries.height / 2
   ) {
     // if the object is outside the plane, remove it and return
     scene.remove(object);
@@ -354,49 +406,49 @@ const playerSpeed = 0.1;
 // Update the position of the player based on keyboard input
 function updatePlayerPosition() {
 
-  if (!player || !water || gameOverFlag) { // Update the condition to disable keyboard input if the game is over
+  if (!player || !plane || gameOverFlag) { // Update the condition to disable keyboard input if the game is over
     return;
   }
   // Update the player's position based on keyboard input
   if (keyboard["ArrowUp"]) {
-    player.position.y = Math.min(player.position.y +playerSpeed+ 0.1, water.geometry.parameters.height / 2);
+    player.position.y = Math.min(player.position.y +playerSpeed+ 0.1, plane.geometry.parameters.height / 2);
     player.rotation.z = 0 ; // Set player rotation to north
   }
   if (keyboard["ArrowDown"]) {
-    player.position.y = Math.max(player.position.y - 0.1, -water.geometry.parameters.height / 2);
+    player.position.y = Math.max(player.position.y - 0.1, -plane.geometry.parameters.height / 2);
     player.rotation.z = Math.PI* 1 ; // Set player rotation to south
   }
   if (keyboard["ArrowLeft"]) {
-    player.position.x = Math.max(player.position.x - 0.1, -water.geometry.parameters.width / 2);
+    player.position.x = Math.max(player.position.x - 0.1, -plane.geometry.parameters.width / 2);
     player.rotation.z = Math.PI / 2; // Set player rotation to west
   }
   if (keyboard["ArrowRight"]) {
-    player.position.x = Math.min(player.position.x + 0.1, water.geometry.parameters.width / 2);
+    player.position.x = Math.min(player.position.x + 0.1, plane.geometry.parameters.width / 2);
     player.rotation.z = -Math.PI / 2; // Set player rotation to east
   }
   if (keyboard["ArrowUp"] && keyboard["ArrowRight"]) {
-    player.position.y = Math.min(player.position.y + 0.1, water.geometry.parameters.height / 2);
-    player.position.x = Math.min(player.position.x + 0.1, water.geometry.parameters.width / 2);
+    player.position.y = Math.min(player.position.y + 0.1, plane.geometry.parameters.height / 2);
+    player.position.x = Math.min(player.position.x + 0.1, plane.geometry.parameters.width / 2);
     player.rotation.z = -Math.PI / 4; // Set player rotation to northeast
   }
   if (keyboard["ArrowUp"] && keyboard["ArrowLeft"]) {
-    player.position.y = Math.min(player.position.y + 0.1, water.geometry.parameters.height / 2);
-    player.position.x = Math.max(player.position.x - 0.1, -water.geometry.parameters.width / 2);
+    player.position.y = Math.min(player.position.y + 0.1, plane.geometry.parameters.height / 2);
+    player.position.x = Math.max(player.position.x - 0.1, -plane.geometry.parameters.width / 2);
     player.rotation.z = Math.PI / 4; // Set player rotation to northwest
   }
   if (keyboard["ArrowDown"] && keyboard["ArrowRight"]) {
-    player.position.y = Math.max(player.position.y - 0.1, -water.geometry.parameters.height / 2);
-    player.position.x = Math.min(player.position.x + 0.1, water.geometry.parameters.width / 2);
+    player.position.y = Math.max(player.position.y - 0.1, -plane.geometry.parameters.height / 2);
+    player.position.x = Math.min(player.position.x + 0.1, plane.geometry.parameters.width / 2);
     player.rotation.z = -Math.PI * 0.75; // Set player rotation to southeast
   }
   if (keyboard["ArrowDown"] && keyboard["ArrowLeft"]) {
-    player.position.y = Math.max(player.position.y - 0.1, -water.geometry.parameters.height / 2);
-    player.position.x = Math.max(player.position.x - 0.1, -water.geometry.parameters.width / 2);
+    player.position.y = Math.max(player.position.y - 0.1, -plane.geometry.parameters.height / 2);
+    player.position.x = Math.max(player.position.x - 0.1, -plane.geometry.parameters.width / 2);
     player.rotation.z = Math.PI * 0.75; // Set player rotation to southwest
   }
   
-  // Create a bounding box for the water
-  const waterBoundingBox = new THREE.Box3().setFromObject(water);
+  // Create a bounding box for the plane
+  const planeBoundingBox = new THREE.Box3().setFromObject(plane);
 
   // Create a bounding box for the player
   const playerBoundingBox = new THREE.Box3().setFromObject(player);
@@ -405,7 +457,7 @@ function updatePlayerPosition() {
   }
 
   // Check for intersection between the two bounding boxes
-  if (playerBoundingBox.intersectsBox(waterBoundingBox)) {
+  if (playerBoundingBox.intersectsBox(planeBoundingBox)) {
     // Allow movement
     player.position.z = 0;
     // console.log("Player is on the plane.");
@@ -475,9 +527,18 @@ function isObjectWithinCameraRange(object) {
   return distance < 10;
 }
 
+function animateWater() {
+  waterMaterial.uniforms.time.value += 0.1;
+  requestAnimationFrame(animateWater);
+}
+
+animateWater();
+
 // Render the scene
 function animate() {
   requestAnimationFrame(animate);
+  // const time = performance.now() / 1000;
+  // uniforms.time.value = time;
   updatePlayerPosition();
   renderer.render(scene, camera);
   checkCollisions();
