@@ -181,16 +181,12 @@ function gameOver() {
   }
   objects.length = 0;
 
-  // Reset the player's position and score
-  player.position.set(0, 0, 0);
-  score = 0;
-
-  // Display the player's score on the screen
-  scoreElement.innerHTML = 'Score: ' + score;
-
-  // Reset the remaining time and display it on the screen
-  remainingTime = timer;
-  timerDiv.innerHTML = 'Time: ' + remainingTime;
+  // Display the player's score as a CSS overlay
+  const scoreOverlay = document.createElement('div');
+  scoreOverlay.id = 'score-overlay';
+  scoreOverlay.innerHTML = 'Game Over';
+  scoreOverlay.innerHTML += '<br>Score: ' + score;
+  document.body.appendChild(scoreOverlay);
 
   // Create a restart button
   const restartBtn = document.createElement('button');
@@ -207,6 +203,8 @@ function gameOver() {
   clearTimeout(timerId);
   stopObjectCreation();
 }
+
+
 
 
 // Create a function to start the timer
