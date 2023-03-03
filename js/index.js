@@ -1,5 +1,15 @@
 let canvas;
 let player;
+let timerId;
+// Declare objectIntervalId in the global scope
+let objectIntervalId;
+let gameOverFlag = false;
+
+// Set up the timer
+var timer = 10; // 3 minutes in seconds
+
+// Create an array to store the objects in the scene
+const objects = [];
 
 // Setup the scene
 var scene = new THREE.Scene();
@@ -15,6 +25,26 @@ renderer.toneMappingExposure = 1;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
+// Add event listener to resize renderer when the window is resized
+window.addEventListener('resize', function () {
+  var width = window.innerWidth;
+  var height = window.innerHeight;
+  renderer.setSize(width, height);
+  camera.aspect = width / height;
+  camera.updateProjectionMatrix();
+});
+
+const planeGeometry = new THREE.PlaneGeometry(23, 8);
+const planeMaterial = new THREE.MeshPhongMaterial({ color: 0x0000FF });
+const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+plane.position.set(0, 0, 0);
+scene.add(plane);
+
+// Add directional light to the scene
+const directionalLight = new THREE.DirectionalLight(0xffffff, 0.90);
+directionalLight.position.set(0, 0, 100);
+scene.add(directionalLight);
+
 // Create a new loader
 const loader = new THREE.GLTFLoader();
 
@@ -29,12 +59,9 @@ loader.load(
     boat.scale.set(1, 1, 1);
     boat.rotation.set(0,0,0);
 
-
-    
     // Add the boat to the scene
     scene.add(boat);
-    player=boat
-
+    player=boat;
   },
   undefined, // onProgress callback function
   function (error) {
@@ -65,27 +92,8 @@ objects.push(turtle);
   }
 );
 
-const planeGeometry = new THREE.PlaneGeometry(23, 8);
-const planeMaterial = new THREE.MeshPhongMaterial({ color: 0x0000FF });
-const plane = new THREE.Mesh(planeGeometry, planeMaterial);
-plane.position.set(0, 0, 0);
-scene.add(plane);
-
-// Add event listener to resize renderer when the window is resized
-window.addEventListener('resize', function () {
-  var width = window.innerWidth;
-  var height = window.innerHeight;
-  renderer.setSize(width, height);
-  camera.aspect = width / height;
-  camera.updateProjectionMatrix();
-});
 
 
-// Create an array to store the objects in the scene
-const objects = [];
-
-// Set up the timer
-var timer = 180; // 3 minutes in seconds
 // Create a variable to store the remaining time
 let remainingTime = timer;
 var timerDiv = document.createElement('div');
@@ -99,29 +107,22 @@ console.log(timer);
 
 // Create a function to update the timer
 function updateTimer() {
-  // Subtract 1 second from the remaining time
   remainingTime--;
 
-  // Check if the time has run out
   if (remainingTime <= 0) {
-    // Display a message or trigger an event to indicate that time is up
     console.log("Time's up!");
     
-    // Trigger game over event
     gameOver();
-    
     return;
   }
 
-  // Display the remaining time on the screen
   timerDiv.innerHTML = 'Time: ' + remainingTime;
   
-  // Spawn trash and marine wildlife every 10 seconds
-  if (remainingTime % 10 === 0) {
+  // Update the object creation function to only create objects if the game is not over
+  if (remainingTime % 10 === 0 && !gameOverFlag) {
     createRandomObject();
   }
 
-  // Schedule the next update in 1 second
   setTimeout(updateTimer, 1000);
 }
 
@@ -154,9 +155,24 @@ function restart() {
   updateTimer();
 }
 
+// Create a function to stop creating objects
+function stopObjectCreation() {
+  clearInterval(objectIntervalId);
+  objectIntervalId = undefined;
+}
+
 function gameOver() {
-  // Display a message or trigger an event to indicate that the game is over
   console.log("Game over!");
+
+  gameOverFlag = true; // Set the game over flag to true
+
+  // Stop creating objects by clearing the interval
+  if (objectIntervalId) {
+    stopObjectCreation();
+  }
+
+  // Disable keyboard controls
+  keyboard = {};
 
   // Remove all objects from the scene
   for (let i = 0; i < objects.length; i++) {
@@ -188,12 +204,10 @@ function gameOver() {
   });
   document.body.appendChild(restartBtn);
 
-  // Stop the timer
   clearTimeout(timerId);
+  stopObjectCreation();
 }
 
-// Create a variable to store the timer ID
-let timerId;
 
 // Create a function to start the timer
 function startTimer() {
@@ -235,16 +249,37 @@ const geometries = [
 
 // Create a random trash or wildlife object
 function createRandomObject() {
+    // Check if the game is over
+    if (remainingTime <= 0 || gameOverFlag) {
+      return;
+    }
   const isWildlife = Math.random() < 0.5; // 50% chance of being wildlife
   const geometry = isWildlife ? geometries[0] : geometries[1]; // Use sphere geometry for wildlife, cube geometry for trash
   const material = isWildlife ? materials[0] : materials[1];
   const object = new THREE.Mesh(geometry, material);
   object.position.set(
-    Math.random() * 10 - 5, 
-    Math.random() * 10 - 5, 0);
+    (Math.random() * 22) - 11, // set random position within the plane width
+    (Math.random() * 7) - 3.5, // set random position within the plane height
+    0
+  );
   const scale = Math.random() * 1; // Random scale value between 1 and 15
   object.scale.set(scale, scale, scale);
   object.type = isWildlife ? 'wildlife' : 'trash';
+
+  // check if object is within the bounds of the plane
+  const planeBoundaries = planeGeometry.parameters;
+  const objectBoundaries = new THREE.Box3().setFromObject(object);
+  if (
+    objectBoundaries.min.x > planeBoundaries.width / 2 ||
+    objectBoundaries.max.x < -planeBoundaries.width / 2 ||
+    objectBoundaries.min.y > planeBoundaries.height / 2 ||
+    objectBoundaries.max.y < -planeBoundaries.height / 2
+  ) {
+    // if the object is outside the plane, remove it and return
+    scene.remove(object);
+    return;
+  }
+
   scene.add(object);
   objects.push(object);
   console.table({
@@ -255,9 +290,6 @@ function createRandomObject() {
     ObjectType: object.type,
   });
 }
-
-
-
 
 // Check for collisions between the player and each object in the scene
 function checkCollisions() {
@@ -306,14 +338,6 @@ createObject();
 const ambientLight = new THREE.AmbientLight(0xffffff, 1);
 scene.add(ambientLight);
 
-// Add directional light to the scene
-const directionalLight = new THREE.DirectionalLight(0xffffff, 0.90);
-directionalLight.position.set(0, 0, 100);
-scene.add(directionalLight);
-
-// Position the camera to view the scene
-camera.position.z = 5;
-
 // Listen for keyboard events
 var keyboard = {};
 document.addEventListener("keydown", function (event) {
@@ -327,6 +351,10 @@ const playerSpeed = 0.1;
 
 // Update the position of the player based on keyboard input
 function updatePlayerPosition() {
+
+  if (!player || !plane || gameOverFlag) { // Update the condition to disable keyboard input if the game is over
+    return;
+  }
   // Update the player's position based on keyboard input
   if (keyboard["ArrowUp"]) {
     player.position.y = Math.min(player.position.y +playerSpeed+ 0.1, plane.geometry.parameters.height / 2);
@@ -370,6 +398,9 @@ function updatePlayerPosition() {
 
   // Create a bounding box for the player
   const playerBoundingBox = new THREE.Box3().setFromObject(player);
+  if (player !== undefined) {
+    playerBoundingBox.setFromObject(player);
+  }
 
   // Check for intersection between the two bounding boxes
   if (playerBoundingBox.intersectsBox(planeBoundingBox)) {
@@ -389,48 +420,52 @@ function updatePlayerPosition() {
   checkCollisions();
 }
 
+//ArrowCode TODO
+// // Create an arrow to navigate player to objects
+// const arrowGeometry = new THREE.ConeGeometry(0.5, 1, 8);
+// const arrowMaterial = new THREE.MeshPhongMaterial({ color: 0xff0000, transparent: true, opacity: 0.5 });
+// const arrow = new THREE.Mesh(arrowGeometry, arrowMaterial);
+// scene.add(arrow);
 
-// Create an arrow to navigate player to objects
-const arrowGeometry = new THREE.ConeGeometry(0.5, 1, 8);
-const arrowMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-const arrow = new THREE.Mesh(arrowGeometry, arrowMaterial);
-scene.add(arrow);
+// // Update the arrow position to point to the nearest object that is not within the camera range
+// function updateArrowPosition() {
+//   // Find the nearest trash object that is not within the camera range
+//   let nearestObject = null;
+//   let nearestDistance = Infinity;
 
-// Update the arrow position to point to the nearest object that is not within the camera range
-function updateArrowPosition() {
-  // Find the nearest object that is not within the camera range
-  let nearestObject = null;
-  let nearestDistance = Infinity;
+//   // Filter objects array to only include objects with type "trash"
+//   const trashObjects = objects.filter((object) => object.type === "trash");
 
-  for (let i = 0; i < objects.length; i++) {
-    const object = objects[i];
+//   for (let i = 0; i < trashObjects.length; i++) {
+//     const object = trashObjects[i];
 
-    // Check if the object is not within the camera range
-    if (!isObjectWithinCameraRange(object)) {
-      // Calculate the distance between the player and the object
-      const distance = player.position.distanceTo(object.position);
+//     // Check if the object is not within the camera range
+//     if (!isObjectWithinCameraRange(object)) {
+//       // Calculate the distance between the player and the object
+//       const distance = player.position.distanceTo(object.position);
 
-      // Update the nearest object and distance if this object is closer
-      if (distance < nearestDistance) {
-        nearestObject = object;
-        nearestDistance = distance;
-      }
-    }
-  }
+//       // Update the nearest object and distance if this object is closer
+//       if (distance < nearestDistance) {
+//         nearestObject = object;
+//         nearestDistance = distance;
+//       }
+//     }
+//   }
 
-  // Update the arrow position and rotation to point to the nearest object
-  if (nearestObject) {
-    arrow.position.copy(player.position);
-    arrow.position.z = 2;
-    arrow.rotation.z = Math.atan2(
-      nearestObject.position.y - player.position.y,
-      nearestObject.position.x - player.position.x
-    );
-    arrow.visible = true;
-  } else {
-    arrow.visible = false;
-  }
-}
+//   // Update the arrow position and rotation to point to the nearest object
+//   if (nearestObject) {
+//     arrow.position.copy(player.position);
+//     arrow.position.z = 2;
+//     arrow.rotation.z = Math.atan2(
+//       nearestObject.position.y - player.position.y,
+//       nearestObject.position.x - player.position.x
+//     );
+//     arrow.visible = true;
+//   } else {
+//     arrow.visible = false;
+//   }
+// }
+
 
 // Check if an object is within the camera range
 function isObjectWithinCameraRange(object) {
@@ -444,7 +479,7 @@ function animate() {
   updatePlayerPosition();
   renderer.render(scene, camera);
   checkCollisions();
-  updateArrowPosition();
+  stopObjectCreation();
 }
 animate();
 
