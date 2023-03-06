@@ -1,3 +1,5 @@
+// import * as THREE from 'three';
+
 let canvas;
 let player;
 let playerName;
@@ -87,13 +89,22 @@ const vertexShader = `
 const fragmentShader = `
   uniform float time;
   varying vec2 vUv;
+  float PI = 3.141592653589793238;
+
   void main() {
-    vec3 color1 = vec3(0.0, 0.0, 1.0); // Blue
-    vec3 color2 = vec3(0.0, 0.0, 0.5); // Dark blue
-    vec3 color = mix(color1, color2, vUv.y + sin(time * 3.0 + vUv.x * 10.0) * 0.1); // Gradient with animation
-    gl_FragColor = vec4(color, 0.2);
+    vec2 uv = vUv;
+
+    // Scale the UV coordinates to create ripples
+    uv *= 10.0;
+
+    // Create a noise pattern based on the UV coordinates and the current time
+    float noise = abs(sin(uv.x + uv.y + time));
+
+    // Add the noise to the alpha channel to create a ripple effect
+    gl_FragColor = vec4(0.0, 0.0, 1.0, noise * 0.1);
   }
 `;
+
 
 const waterMaterial = new THREE.ShaderMaterial({
   uniforms,
@@ -436,6 +447,25 @@ function createRandomObject() {
   });
 }
 
+
+const floatAmplitude = 0.1;
+
+function animateObjects() {
+  const time = performance.now() * 0.001; // Get current time in seconds
+  objects.forEach(object => {
+    if (!object.outOfBounds) {
+      const sinValue = Math.sin(time * 2 + object.position.x * 0.5 + object.position.y * 0.3);
+      object.position.z = sinValue * floatAmplitude;
+    }
+  });
+}
+
+
+
+
+
+
+
 // Check for collisions between the player and each object in the scene
 function checkCollisions() {
   // Create a bounding box for the player
@@ -473,6 +503,8 @@ function checkCollisions() {
     }
   }
 }
+
+
 
 
 function createObject() {
@@ -575,6 +607,7 @@ function animate() {
   stopObjectCreation();
   uniforms.time.value += 0.1;
   renderer.render(scene, camera);
+  animateObjects();
 }
 animate();
 
