@@ -46,7 +46,7 @@ window.addEventListener('resize', function () {
   var height = window.innerHeight;
   renderer.setSize(width, height);
   camera.aspect = width / height;
-  camera.updateProjectionMatrix();
+  camera.updateProjectionMatrix();  
 });
 
 const planeGeometry = new THREE.PlaneGeometry(24, 9);
@@ -326,7 +326,11 @@ function gameOver() {
   document.body.appendChild(restartBtn);
 
  // Save the player's name and score to a local JSON file
- const playerData = { name: playerName, score: score };
+ const playerData = {
+  name: playerName,
+  score: score,
+  date: new Date()
+};
  const leaderboard = JSON.parse(localStorage.getItem('leaderboard') || '[]');
  leaderboard.push(playerData);
  localStorage.setItem('leaderboard', JSON.stringify(leaderboard));
@@ -466,7 +470,6 @@ function checkCollisions() {
 
       // Update the score element on the page
       scoreElement.innerHTML = 'Score: ' + score;
-      // ... existing code to log the object information ...
     }
   }
 }
